@@ -1,48 +1,55 @@
-const express = require("express");
-const path = require("path");
-const { open } = require("sqlite");
-const sqlite3 = require("sqlite3");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const express = require("express"); // Import express framework
+const app = express(); //Creating an express instance. With this we can use express methods.
 
-const dbPath = path.join(__dirname, "goodreads.db");
-const app = express();
+app.use(express.json()); //This is a middleware function. It allows the express to read the json data.
 
-app.use(express.json());
+const path = require("path"); //Core module
+const dbPath = path.join(__dirname, "goodreads.db"); //To locate the file and give a path to it.
 
-let db = null;
+const { open } = require("sqlite"); //Open method from sqlite is useful to establish connection b/w server and database.
+const sqlite3 = require("sqlite3"); //Import sqlite3 to work as a driver.
+
+const bcrypt = require("bcrypt"); //Useful to encrypt passwords.
+
+const jwt = require("jsonwebtoken"); //Used to create a jwtToken.
+
+let db = null; //Give initially null because if connection goes wrong, it will have null as value rather than undefined.
 
 const initializeDBAndServer = async () => {
+  //Error Handling
   try {
     db = await open({ filename: dbPath, driver: sqlite3.Database });
+    //If connection went well, we'll listen to the port 3000.
     app.listen(3000, () => {
       console.log("Server Running at http://localhost:3000/");
     });
   } catch (e) {
     console.log(`DB Error: ${e.message}`);
-    process.exit(-1);
+    process.exit(-1); //Used to exit the current process.
   }
 };
 initializeDBAndServer();
 
 //Authentication Middleware
 const authenticateToken = (request, response, next) => {
+  //Get jwtToken from the header and check whether it's valid or not.
   let jwtToken;
   const authHeader = request.headers["authorization"];
   if (authHeader !== undefined) {
-    jwtToken = authHeader.split(" ")[1];
+    jwtToken = authHeader.split(" ")[1]; //Getting only jwtToken value by removing Bearer.
   }
   if (jwtToken === undefined) {
-    response.status(401);
+    response.status(401); //Unauthorized
     response.send("Invalid JWT Token");
   } else {
+    //We have to give the same secret key when we are using it to create the jwtToken.
     jwt.verify(jwtToken, "MY_SECRET_TOKEN", async (error, payload) => {
       if (error) {
-        response.status(401);
+        response.status(401); //Unauthorized
         response.send("Invalid JWT Token");
       } else {
-        request.username = payload.username;
-        next();
+        request.username = payload.username; //Sending data to next middleware or handler through request object.
+        next(); //To go the next middleware or handler we need to mention(call) it.
       }
     });
   }
@@ -52,6 +59,8 @@ const authenticateToken = (request, response, next) => {
 app.post("/users/", async (request, response) => {
   const { username, name, password, gender, location } = request.body;
   const hashedPassword = await bcrypt.hash(request.body.password, 10);
+
+  //Check whether the user already exist or not. If not, then create.
   const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`;
   const dbUser = await db.get(selectUserQuery);
   if (dbUser === undefined) {
@@ -69,7 +78,7 @@ app.post("/users/", async (request, response) => {
     await db.run(createUserQuery);
     response.send(`User created successfully`);
   } else {
-    response.status(400);
+    response.status(400); //Bad Request
     response.send("User already exists");
   }
 });
@@ -77,13 +86,15 @@ app.post("/users/", async (request, response) => {
 //User Login API
 app.post("/login/", async (request, response) => {
   const { username, password } = request.body;
+  //Check whether the user already exist or not. If present, login.
   const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`;
   const dbUser = await db.get(selectUserQuery);
   if (dbUser === undefined) {
-    response.status(400);
+    response.status(400); //Bad Request
     response.send("Invalid User");
   } else {
     const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
+    //If passwords matched, create jwtToken
     if (isPasswordMatched === true) {
       const payload = {
         username: username,
@@ -91,13 +102,14 @@ app.post("/login/", async (request, response) => {
       const jwtToken = jwt.sign(payload, "MY_SECRET_TOKEN");
       response.send({ jwtToken });
     } else {
-      response.status(400);
+      response.status(400); //Bad Request
       response.send("Invalid Password");
     }
   }
 });
 
 //Get Profile
+//Don't forget to add the authorization middleware for every API call.
 app.get("/profile/", authenticateToken, async (request, response) => {
   let { username } = request;
   const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`;
@@ -120,6 +132,7 @@ app.get("/books/", authenticateToken, async (request, response) => {
 
 //Get Books(with Filters) API
 app.get("/books/", authenticateToken, async (request, response) => {
+  //Give default values every time.
   const {
     offset = 2,
     limit = 5,
@@ -190,7 +203,7 @@ app.post("/books/", authenticateToken, async (request, response) => {
       );`;
 
   const dbResponse = await db.run(addBookQuery);
-  const bookId = dbResponse.lastID;
+  const bookId = dbResponse.lastID; //It gives the ID of the latest book created.
   response.send({ bookId: bookId });
 });
 
