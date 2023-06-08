@@ -25,7 +25,7 @@ const initializeDBAndServer = async () => {
     });
   } catch (e) {
     console.log(`DB Error: ${e.message}`);
-    process.exit(-1); //Used to exit the current process.
+    process.exit(1); //Used to exit the current process.
   }
 };
 initializeDBAndServer();
